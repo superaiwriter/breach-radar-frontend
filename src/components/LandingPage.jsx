@@ -13,7 +13,7 @@ import SupportModal from "./SupportModal";
 import TrustedCompaniesMarquee from "./TrustedCompaniesMarquee";
 import PlatformStats from "./PlatformStats";
 import UnderTheHood from "./UnderTheHood";
-import { getPublicPricing, DEFAULT_FALLBACK_PLANS } from "../services/api/pricingService";
+import { apiClient } from "../services/api/client";
 import "./LandingPage.css";
 
 const metrics = [
@@ -120,6 +120,32 @@ const testimonials = [
 ];
 
 const marqueeTestimonials = [...testimonials, ...testimonials];
+
+const PLAN_DISPLAY_META = {
+  Free: { desc: "Perfect for individuals getting started", cta: "Get Started Free", popular: false },
+  Starter: { desc: "Perfect for small websites & startups", cta: "Get Started", popular: false },
+  Professional: { desc: "Great for growing businesses", cta: "Get Started", popular: true },
+  Business: { desc: "Built for scaling security teams", cta: "Get Started", popular: false },
+  Enterprise: { desc: "For large organizations", cta: "Get Started", popular: false },
+};
+
+const DEFAULT_PLAN_META = { desc: "Grow your security coverage with PentestRadar", cta: "Get Started", popular: false };
+
+function formatPlanPrice(price) {
+  return new Intl.NumberFormat("en-IN").format(price);
+}
+
+function buildPlanFeatures(plan) {
+  if (Array.isArray(plan.features) && plan.features.length > 0) {
+    return plan.features;
+  }
+  // Fallback: derive basic feature bullets from the raw limits if no features array is set
+  return [
+    `${plan.seatLimit >= 999999 ? "Unlimited" : plan.seatLimit} User Seat${plan.seatLimit === 1 ? "" : "s"}`,
+    `${plan.domainLimit >= 999999 ? "Unlimited" : plan.domainLimit} Verified Domain${plan.domainLimit === 1 ? "" : "s"}`,
+    `${plan.scanLimit >= 999999 ? "Unlimited" : plan.scanLimit} Scans / month`,
+  ];
+}
 
 function DashboardMockup() {
   return (
@@ -246,31 +272,42 @@ export default function LandingPage() {
   const location = useLocation();
   const [isSupportOpen, setIsSupportOpen] = useState(false);
 
-  // Dynamic pricing plans state with instant default fallback
-  const [pricingPlans, setPricingPlans] = useState(DEFAULT_FALLBACK_PLANS);
-  const [pricingLoading, setPricingLoading] = useState(false);
-  const [pricingError, setPricingError] = useState(null);
+  const [pricingPlans, setPricingPlans] = useState([]);
+  const [pricingLoading, setPricingLoading] = useState(true);
+  const [pricingError, setPricingError] = useState(false);
 
-  // Fetch dynamic pricing plans from public API
   useEffect(() => {
-    let isMounted = true;
-    const fetchPricing = async () => {
-      try {
-        const data = await getPublicPricing();
-        if (isMounted && Array.isArray(data) && data.length > 0) {
-          setPricingPlans(data);
-          setPricingError(null);
-        }
-      } catch (err) {
-        console.warn("[LandingPage] Using fallback pricing plans:", err?.message);
-      } finally {
-        if (isMounted) setPricingLoading(false);
-      }
-    };
+    let cancelled = false;
 
-    fetchPricing();
+    async function loadPlans() {
+      try {
+        const response = await apiClient.get("/plans");
+        if (cancelled) return;
+        const formatted = (response.data?.plans || []).map((plan) => {
+          const meta = PLAN_DISPLAY_META[plan.name] || PLAN_DISPLAY_META[plan.displayName] || DEFAULT_PLAN_META;
+          return {
+            name: plan.displayName || plan.name,
+            desc: plan.description || meta.desc,
+            price: plan.billingInterval === "custom" ? null : formatPlanPrice(plan.price),
+            suffix: plan.billingInterval === "custom" ? "Custom" : (plan.billingInterval === "year" ? "/yr" : "/mo"),
+            popular: typeof plan.isPopular === "boolean" ? plan.isPopular : meta.popular,
+            features: buildPlanFeatures(plan),
+            cta: plan.ctaText || meta.cta,
+          };
+        });
+        setPricingPlans(formatted);
+        setPricingError(false);
+      } catch (err) {
+        console.error("[LandingPage] Failed to load pricing plans:", err);
+        if (!cancelled) setPricingError(true);
+      } finally {
+        if (!cancelled) setPricingLoading(false);
+      }
+    }
+
+    loadPlans();
     return () => {
-      isMounted = false;
+      cancelled = true;
     };
   }, []);
 
@@ -652,16 +689,16 @@ export default function LandingPage() {
           <h2 id="pricing-title">Choose the Perfect Plan for You</h2>
           <p>Simple, transparent pricing. No hidden fees.</p>
 
-          {pricingLoading && pricingPlans.length === 0 ? (
-            <div className="pricing-grid" style={{ opacity: 0.7 }}>
-              <div style={{ textAlign: "center", width: "100%", gridColumn: "1 / -1", padding: "40px 0", color: "#94a3b8" }}>
-                Loading pricing plans...
-              </div>
+          {pricingLoading ? (
+            <div className="pricing-grid">
+              {[...Array(4)].map((_, i) => (
+                <div className="pricing-card skeleton" key={i} style={{ minHeight: "420px" }} />
+              ))}
             </div>
-          ) : pricingError && pricingPlans.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "40px 0", color: "#f87171" }}>
-              {pricingError}
-            </div>
+          ) : pricingError ? (
+            <p style={{ textAlign: "center", color: "#8da09c" }}>
+              Unable to load pricing right now. Please refresh the page.
+            </p>
           ) : (
             <div className="pricing-grid">
               {pricingPlans.map((plan) => {
@@ -669,8 +706,8 @@ export default function LandingPage() {
                 const rawPriceNum = typeof plan.rawPrice === 'number' 
                   ? plan.rawPrice 
                   : (typeof plan.price === 'number' ? plan.price : Number(String(plan.price || '0').replace(/[^0-9.]/g, '')) || 0);
-                const isCustom = Boolean(plan.custom || (rawPriceNum === 0 && plan.name?.toLowerCase() === 'enterprise'));
-                const formattedPrice = rawPriceNum.toLocaleString('en-IN');
+                const isCustom = Boolean(plan.custom || (rawPriceNum === 0 && plan.name?.toLowerCase() === 'enterprise') || plan.price === null);
+                const formattedPrice = plan.price !== null && plan.price !== undefined ? plan.price : rawPriceNum.toLocaleString('en-IN');
                 const suffix = plan.suffix || (plan.billingInterval === 'year' ? '/yr' : '/mo');
                 const description = plan.desc || plan.description || '';
                 const ctaText = plan.cta || plan.ctaText || (rawPriceNum === 0 ? 'Get Started Free' : 'Get Started');

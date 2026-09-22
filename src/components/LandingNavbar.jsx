@@ -17,6 +17,8 @@ import {
   Award,
   HeartHandshake,
   UserCircle2,
+  Menu,
+  X,
 } from "lucide-react";
 import BrandLogo from "./BrandLogo";
 
@@ -117,6 +119,8 @@ export default function LandingNavbar({ onOpenSupport }) {
   const location = useLocation();
   const isHomePage = location.pathname === "/";
   const [openDropdown, setOpenDropdown] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openMobileDropdown, setOpenMobileDropdown] = useState(null);
   const navLinksRef = useRef(null);
 
   useEffect(() => {
@@ -140,6 +144,32 @@ export default function LandingNavbar({ onOpenSupport }) {
     };
   }, []);
 
+  useEffect(() => {
+    function handleMobileKeyDown(event) {
+      if (event.key === "Escape") {
+        setMobileMenuOpen(false);
+      }
+    }
+    function handleResize() {
+      if (window.innerWidth > 1080) {
+        setMobileMenuOpen(false);
+      }
+    }
+    document.addEventListener("keydown", handleMobileKeyDown);
+    window.addEventListener("resize", handleResize);
+    return () => {
+      document.removeEventListener("keydown", handleMobileKeyDown);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    document.body.style.overflow = mobileMenuOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileMenuOpen]);
+
   function goToSection(sectionId) {
     if (isHomePage) {
       document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth" });
@@ -153,11 +183,13 @@ export default function LandingNavbar({ onOpenSupport }) {
   function handleSectionClick(event, sectionId) {
     event.preventDefault();
     setOpenDropdown(null);
+    setMobileMenuOpen(false);
     goToSection(sectionId);
   }
 
   function handleMenuItemClick(event, item) {
     setOpenDropdown(null);
+    setMobileMenuOpen(false);
 
     if (item.action === "support") {
       event.preventDefault();
@@ -174,6 +206,10 @@ export default function LandingNavbar({ onOpenSupport }) {
     setOpenDropdown((current) => (current === title ? null : title));
   }
 
+  function handleMobileDropdownToggle(title) {
+    setOpenMobileDropdown((current) => (current === title ? null : title));
+  }
+
   return (
     <nav className="navbar" aria-label="Primary navigation">
       <a
@@ -182,6 +218,7 @@ export default function LandingNavbar({ onOpenSupport }) {
         onClick={(event) => {
           event.preventDefault();
           setOpenDropdown(null);
+          setMobileMenuOpen(false);
           navigate("/");
         }}
       >
@@ -252,7 +289,106 @@ export default function LandingNavbar({ onOpenSupport }) {
         <button className="start-btn small" type="button" onClick={() => navigate("/register")}>
           Get Started
         </button>
+        <button
+          className="mobile-menu-toggle"
+          type="button"
+          aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={mobileMenuOpen}
+          onClick={() => setMobileMenuOpen((open) => !open)}
+        >
+          {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
+      </div>
+
+      <div
+        className={`mobile-nav-backdrop${mobileMenuOpen ? " visible" : ""}`}
+        onClick={() => setMobileMenuOpen(false)}
+      />
+
+      <div className={`mobile-nav-panel${mobileMenuOpen ? " open" : ""}`}>
+        <a
+          className="mobile-nav-link"
+          href="#features"
+          onClick={(event) => handleSectionClick(event, "features")}
+        >
+          Features
+        </a>
+        <a
+          className="mobile-nav-link"
+          href="#how-it-works"
+          onClick={(event) => handleSectionClick(event, "how-it-works")}
+        >
+          How It Works
+        </a>
+        <a
+          className="mobile-nav-link"
+          href="#pricing"
+          onClick={(event) => handleSectionClick(event, "pricing")}
+        >
+          Pricing
+        </a>
+
+        {navDropdowns.map((dropdown) => {
+          const isOpen = openMobileDropdown === dropdown.title;
+          return (
+            <div className="mobile-nav-dropdown" key={dropdown.title}>
+              <button
+                className={`mobile-nav-dropdown-trigger${isOpen ? " is-open" : ""}`}
+                type="button"
+                aria-expanded={isOpen}
+                onClick={() => handleMobileDropdownToggle(dropdown.title)}
+              >
+                {dropdown.title}
+                <span className="mobile-chevron" />
+              </button>
+              <div className={`mobile-nav-dropdown-items${isOpen ? " open" : ""}`}>
+                {dropdown.items.map((item) => {
+                  const IconComponent = item.icon;
+                  return (
+                    <a
+                      className="mobile-nav-menu-item"
+                      href={item.href || "#"}
+                      key={item.title}
+                      onClick={(event) => handleMenuItemClick(event, item)}
+                    >
+                      <span className="menu-icon">
+                        <IconComponent size={17} strokeWidth={1.8} />
+                      </span>
+                      <span>
+                        <strong>{item.title}</strong>
+                        <small>{item.text}</small>
+                      </span>
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        <div className="mobile-nav-actions">
+          <button
+            className="login"
+            type="button"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              navigate("/login");
+            }}
+          >
+            Log in
+          </button>
+          <button
+            className="start-btn small"
+            type="button"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              navigate("/register");
+            }}
+          >
+            Get Started
+          </button>
+        </div>
       </div>
     </nav>
   );
-}
+}
